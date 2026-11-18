@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Infinite Alchemy</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23fff'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-size='28'%3E%E2%9C%A8%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --card: #ffffff;
+    --ink: #111827;
+    --mute: #6b7280;
+    --line: #e5e7eb;
+    --soft: #f9fafb;
+    --accent: #111827;
+    --shadow: 0 10px 30px rgba(0,0,0,.06);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    color: var(--ink);
+    background: var(--bg);
+    font: 15px/1.4 Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+    overflow: hidden;
+  }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1fr 340px;
+  }
+  .stage {
+    position: relative;
+    overflow: auto;
+    padding: 24px;
+  }
+  .top {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 18px;
+  }
+  .logo { font-weight: 800; font-size: 20px; letter-spacing: -.03em; }
+  .logo span { color: var(--mute); font-weight: 600; font-size: 13px; margin-left: 8px; }
+  .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    height: 38px; padding: 0 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card);
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .btn:hover { background: var(--soft); }
+  .btn.pri { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.pri:disabled { opacity: .4; cursor: not-allowed; }
+
+  .board {
+    min-height: calc(100% - 70px);
+    border: 1px dashed #d1d5db;
+    border-radius: 28px;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(0,0,0,.02), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(0,0,0,.025), transparent 45%),
+      #eef1f5;
+    position: relative;
+    padding: 20px;
+  }
+  .hint-empty {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    color: var(--mute); text-align: center; pointer-events: none;
+    padding: 20px;
+  }
+  .hint-empty b { display: block; color: var(--ink); font-size: 18px; margin-bottom: 6px; }
+
+  .chip {
+    position: absolute;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-radius: 999px;
+    background: #fff; border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    user-select: none; cursor: grab;
+    touch-action: none;
+    z-index: 2;
+    max-width: 220px;
+  }
+  .chip:active { cursor: grabbing; }
+  .chip .e { font-size: 20px; line-height: 1; }
+  .chip .n { font-weight: 650; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip.merging { opacity: .35; transform: scale(.96); }
+  .chip.pop { animation: pop .22s ease; }
+  @keyframes pop {
+    from { transform: scale(.7); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .side {
+    border-left: 1px solid var(--line);
+    background: var(--card);
+    display: grid;
+    grid-template-rows: auto auto auto 1fr;
+    min-height: 0;
+  }
+  .side-head { padding: 16px 16px 10px; }
+  .side-head h1 { margin: 0; font-size: 16px; }
+  .side-head p { margin: 6px 0 0; color: var(--mute); font-size: 13px; }
+  .search-wrap { padding: 0 16px 12px; }
+  .search {
+    width: 100%; height: 40px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--soft); padding: 0 12px;
+  }
+  .side-stats {
+    display: flex; gap: 8px; padding: 0 16px 12px;
+  }
+  .pill {
+    flex: 1; text-align: center; padding: 10px 8px;
+    border-radius: 12px; background: var(--soft); border: 1px solid var(--line);
+    color: var(--mute); font-size: 12px;
+  }
+  .pill b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 2px; }
+  .list {
+    overflow: auto; padding: 8px 12px 20px;
+    display: grid; gap: 8px; align-content: start;
+  }
+  .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 14px;
+    border: 1px solid transparent; background: transparent; text-align: left;
+  }
+  .item:hover { background: var(--soft); border-color: var(--line); }
+  .item .e { font-size: 22px; width: 28px; text-align: center; }
+  .item .n { font-weight: 650; font-size: 14px; }
+  .item .m { color: var(--mute); font-size: 11px; }
+
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    display: none; place-items: center; z-index: 50; padding: 16px;
+  }
+  .modal-bg.on { display: grid; }
+  .modal {
+    width: min(420px, 100%); background: #fff; border-radius: 18px;
+    padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  }
+  .modal h2 { margin: 0 0 8px; font-size: 18px; }
+  .modal p { margin: 0 0 12px; color: var(--mute); font-size: 13px; line-height: 1.45; }
+  .modal input {
+    width: 100%; height: 42px; border-radius: 12px; border: 1px solid var(--line);
+    padding: 0 12px; margin-bottom: 12px; background: var(--soft);
+  }
+  .modal .row { display: flex; gap: 8px; justify-content: flex-end; }
+  .status {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(17,24,39,.92); color: #fff;
+    padding: 10px 14px; border-radius: 999px; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 60;
+  }
+  .status.on { opacity: 1; }
+
+  @media (max-width: 860px) {
+    body { overflow: auto; }
+    .app { grid-template-columns: 1fr; height: auto; min-height: 100%; }
+    .stage { min-height: 55vh; }
+    .side { border-left: 0; border-top: 1px solid var(--line); min-height: 40vh; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <main class="stage">
+      <div class="top">
+        <div class="logo">Infinite Alchemy <span>drag · combine · discover</span></div>
+        <div class="top-actions">
+          <button class="btn" id="btnResetBoard" type="button">Очистить поле</button>
+          <button class="btn" id="btnSettings" type="button">Как играть</button>
+        </div>
+      </div>
+      <div class="board" id="board">
+        <div class="hint-empty" id="emptyHint">
+          <div>
+            <b>Перетащи элементы сюда</b>
+            столкни два чипа друг с другом, чтобы скрафтить новый
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="side">
+      <div class="side-head">
+        <h1>Открытия</h1>
+        <p>Кликни элемент, чтобы добавить на поле</p>
+      </div>
+      <div class="search-wrap">
+        <input class="search" id="search" placeholder="Поиск элементов..." />
+      </div>
+      <div class="side-stats">
+        <div class="pill"><b id="cTotal">4</b>всего</div>
+        <div class="pill"><b id="cNew">0</b>своих</div>
+        <div class="pill"><b id="cMode">local</b>режим</div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+  </div>
+
+  <div class="modal-bg" id="modal">
+    <div class="modal">
+      <h2>Как играть</h2>
+      <p>
+        Кликай элементы справа → они появляются на поле.<br>
+        Перетащи два чипа <b>друг на друга</b>, чтобы скрафтить новый.<br>
+        ИИ на сервере отвечает автоматически — ничего настраивать не нужно.
+      </p>
+      <div class="row">
+        <button class="btn pri" type="button" id="btnCloseModal">Понял</button>
+      </div>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  const SAVE = "infinite.alchemy.v2";
+    const MERGE_DIST = 70;
+
+  const BASE = [
+    { id: "water", name: "Water", emoji: "💧", base: true },
+    { id: "fire", name: "Fire", emoji: "🔥", base: true },
+    { id: "earth", name: "Earth", emoji: "🌍", base: true },
+    { id: "wind", name: "Wind", emoji: "🌬️", base: true }
+  ];
+
+  // classic-style seeds (closer to Infinite Craft)
+  const SEED = {
+    "fire|water": ["Steam", "♨️"],
+    "earth|water": ["Mud", "🟤"],
+    "earth|fire": ["Lava", "🌋"],
+    "fire|wind": ["Smoke", "💨"],
+    "water|wind": ["Wave", "🌊"],
+    "earth|wind": ["Dust", "🌫️"],
+    "dust|water": ["Clay", "🧱"],
+    "fire|steam": ["Engine", "⚙️"],
+    "earth|lava": ["Volcano", "🌋"],
+    "earth|mud": ["Clay", "🧱"],
+    "clay|fire": ["Brick", "🧱"],
+    "water|wave": ["Tsunami", "🌊"],
+    "fire|lava": ["Volcano", "🌋"],
+    "dust|fire": ["Gunpowder", "💥"],
+    "earth|wave": ["Sand", "🏜️"],
+    "fire|sand": ["Glass", "🪟"],
+    "glass|sand": ["Time", "⌛"],
+    "earth|steam": ["Geyser", "⛲"],
+    "steam|wind": ["Cloud", "☁️"],
+    "cloud|water": ["Rain", "🌧️"],
+    "earth|rain": ["Plant", "🌱"],
+    "plant|water": ["Seaweed", "🌿"],
+    "earth|plant": ["Grass", "☘️"],
+    "fire|plant": ["Tobacco", "🚬"],
+    "plant|wind": ["Dandelion", "🌼"],
+    "grass|water": ["Swamp", "🐸"],
+    "earth|water": ["Mud", "🟤"],
+    "cloud|earth": ["Fog", "🌁"],
+    "cloud|fire": ["Sun", "☀️"],
+    "cloud|wind": ["Sky", "🌤️"],
+    "sky|water": ["Moon", "🌙"],
+    "moon|sky": ["Night", "🌙"],
+    "moon|sun": ["Eclipse", "🌓"],
+    "night|sun": ["Day", "☀️"],
+    "earth|plant": ["Tree", "🌳"],
+    "fire|tree": ["Charcoal", "🪨"],
+    "tree|wind": ["Leaf", "🍃"],
+    "leaf|water": ["Tea", "🍵"],
+    "fire|leaf": ["Smoke", "💨"],
+    "earth|stone": ["Mountain", "⛰️"],
+    "lava|water": ["Stone", "🪨"],
+    "stone|wind": ["Sand", "🏜️"],
+    "stone|stone": ["Wall", "🧱"],
+    "human|plant": ["Farmer", "👨‍🌾"],
+    "fire|mud": ["Brick", "🧱"],
+    "steam|steam": ["Cloud", "☁️"],
+    "water|water": ["Lake", "🏞️"],
+    "fire|fire": ["Volcano", "🌋"],
+    "wind|wind": ["Tornado", "🌪️"],
+    "earth|earth": ["Pressure", "🪨"],
+    "life|stone": ["Fossil", "🦴"],
+    "fire|water": ["Steam", "♨️"],
+    "energy|water": ["Life", "🧬"],
+    "earth|life": ["Human", "🧑"],
+    "fire|steam": ["Engine", "⚙️"],
+    "air|energy": ["Storm", "⛈️"],
+    "human|stone": ["Tool", "🔨"],
+    "human|tool": ["Worker", "👷"],
+    "fire|human": ["Cook", "🍳"],
+    "human|water": ["Swimmer", "🏊"],
+    "human|wind": ["Smell", "👃"],
+    "human|tree": ["Wood", "🪵"],
+    "fire|wood": ["Campfire", "🏕️"],
+    "campfire|human": ["Story", "📖"],
+    "story|time": ["History", "📜"],
+    "glass|water": ["Aquarium", "🐠"],
+    "human|lake": ["City", "🏙️"],
+    "city|city": ["Metropolis", "🌆"],
+    "time|time": ["Eternity", "♾️"],
+    "life|life": ["Love", "❤️"],
+    "fire|love": ["Passion", "🔥"],
+    "love|water": ["Heartbreak", "💔"]
+  };
+
+  const WORDS_A = ["Neo","Hyper","Plasma","Quantum","Crystal","Solar","Lunar","Shadow","Iron","Wild","Frost","Storm","Dark","Bright","Tiny","Giant","Ancient","Cyber","Pixel","Mythic"];
+  const WORDS_B = ["Orb","Shard","Spirit","Beast","Blade","Core","Wave","Dust","Bloom","Forge","Spark","Drift","King","Knight","Golem","Phoenix","River","Engine","Circuit","Dream"];
+  const EMOJIS = ["✨","🌀","🔮","🪐","💎","🌠","🧊","🌈","🦄","🐲","⚔️","🛡️","🧲","🧬","🪞","🕯️","🧿","☄️","🛸","👾","🍀","🍄","🐙","🦑","🦊","🐺","🐻","🌹","🌻","🌵","🍋","🧀","🍕","🚀","⛵","🏆","🎹","🎲","♟️","🧩"];
+
+  function pairKey(a, b) {
+    return [String(a), String(b)].map(function (x) { return x.toLowerCase(); }).sort().join("|");
+  }
+  function hash(s) {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function slug(name) {
+    return String(name).toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "_").replace(/^_|_$/g, "").slice(0, 48);
+  }
+  function status(msg) {
+    var n = document.getElementById("status");
+    n.textContent = msg;
+    n.classList.add("on");
+    clearTimeout(status._t);
+    status._t = setTimeout(function () { n.classList.remove("on"); }, 1600);
+  }
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(SAVE);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (!data || typeof data !== "object") return null;
+      return data;
+    } catch (e) { return null; }
+  }
+  function saveState() {
+    localStorage.setItem(SAVE, JSON.stringify({
+      unlocked: unlocked,
+      recipes: recipes
+    }));
+  }
+
+  var unlocked = {};
+  var recipes = {};
+  var chips = []; // {uid, id, x, y, el}
+  var chipUid = 1;
+  var serverAI = null; // null unknown, true/false after health
+
+  BASE.forEach(function (e) { unlocked[e.id] = e; });
+  Object.keys(SEED).forEach(function (k) {
+    var parts = k.split("|");
+    // normalize already sorted in SEED keys
+    recipes[k] = { name: SEED[k][0], emoji: SEED[k][1], id: slug(SEED[k][0]) };
+  });
+
+  var st = loadState();
+  if (st && st.unlocked) {
+    Object.keys(st.unlocked).forEach(function (id) { unlocked[id] = st.unlocked[id]; });
+  }
+  if (st && st.recipes) {
+    Object.keys(st.recipes).forEach(function (k) { recipes[k] = st.recipes[k]; });
+  }
+
+  var board = document.getElementById("board");
+  var list = document.getElementById("list");
+  var search = document.getElementById("search");
+  var emptyHint = document.getElementById("emptyHint");
+
+  function allItems() {
+    return Object.keys(unlocked).map(function (id) { return unlocked[id]; })
+      .sort(function (a, b) {
+        if (!!a.base !== !!b.base) return a.base ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+  }
+
+  function renderList() {
+    var q = (search.value || "").trim().toLowerCase();
+    var items = allItems().filter(function (it) {
+      return !q || it.name.toLowerCase().indexOf(q) !== -1;
+    });
+    document.getElementById("cTotal").textContent = String(Object.keys(unlocked).length);
+    document.getElementById("cNew").textContent = String(Object.keys(unlocked).length - BASE.length);
+    document.getElementById("cMode").textContent = serverAI === true ? "ai" : (serverAI === false ? "local" : "…");
+    list.innerHTML = items.map(function (it) {
+      return '<button class="item" type="button" data-id="' + it.id + '">' +
+        '<span class="e">' + it.emoji + '</span>' +
+        '<span><div class="n">' + it.name + '</div><div class="m">' + (it.base ? "base" : "discovered") + '</div></span>' +
+      '</button>';
+    }).join("");
+  }
+
+  function syncEmpty() {
+    emptyHint.style.display = chips.length ? "none" : "grid";
+  }
+
+  function spawnChip(item, x, y, pop) {
+    var uid = chipUid++;
+    var node = document.createElement("div");
+    node.className = "chip" + (pop ? " pop" : "");
+    node.innerHTML = '<span class="e">' + item.emoji + '</span><span class="n">' + item.name + "</span>";
+    node.style.left = x + "px";
+    node.style.top = y + "px";
+    board.appendChild(node);
+    var chip = { uid: uid, id: item.id, x: x, y: y, el: node, item: item };
+    chips.push(chip);
+    bindDrag(chip);
+    syncEmpty();
+    return chip;
+  }
+
+  function removeChip(chip) {
+    chips = chips.filter(function (c) { return c.uid !== chip.uid; });
+    if (chip.el && chip.el.parentNode) chip.el.parentNode.removeChild(chip.el);
+    syncEmpty();
+  }
+
+  function bindDrag(chip) {
+    var startX = 0, startY = 0, origX = 0, origY = 0, dragging = false;
+    chip.el.addEventListener("pointerdown", function (e) {
+      dragging = true;
+      chip.el.setPointerCapture(e.pointerId);
+      startX = e.clientX; startY = e.clientY;
+      origX = chip.x; origY = chip.y;
+      chip.el.style.zIndex = 10;
+    });
+    chip.el.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var r = board.getBoundingClientRect();
+      var nx = origX + (e.clientX - startX);
+      var ny = origY + (e.clientY - startY);
+      nx = Math.max(8, Math.min(nx, r.width - chip.el.offsetWidth - 8));
+      ny = Math.max(8, Math.min(ny, r.height - chip.el.offsetHeight - 8));
+      chip.x = nx; chip.y = ny;
+      chip.el.style.left = nx + "px";
+      chip.el.style.top = ny + "px";
+    });
+    chip.el.addEventListener("pointerup", function () {
+      if (!dragging) return;
+      dragging = false;
+      chip.el.style.zIndex = 2;
+      tryMerge(chip);
+    });
+    chip.el.addEventListener("pointercancel", function () { dragging = false; });
+  }
+
+  function centerOf(chip) {
+    return {
+      x: chip.x + chip.el.offsetWidth / 2,
+      y: chip.y + chip.el.offsetHeight / 2
+    };
+  }
+
+  function tryMerge(chip) {
+    var c1 = centerOf(chip);
+    var best = null, bestD = MERGE_DIST;
+    for (var i = 0; i < chips.length; i++) {
+      var other = chips[i];
+      if (other.uid === chip.uid) continue;
+      var c2 = centerOf(other);
+      var d = Math.hypot(c1.x - c2.x, c1.y - c2.y);
+      if (d < bestD) { bestD = d; best = other; }
+    }
+    if (!best) return;
+    combine(chip, best);
+  }
+
+  function localInvent(a, b) {
+    var key = pairKey(a.id, b.id);
+    var h = hash(key + a.name + b.name);
+    // Infinite Craft-ish short compounds
+    var styles = [
+      function () { return a.name + b.name; },
+      function () { return b.name + a.name; },
+      function () { return WORDS_A[h % WORDS_A.length] + " " + b.name; },
+      function () { return a.name + " " + WORDS_B[(h >> 3) % WORDS_B.length]; },
+      function () { return WORDS_A[(h >> 2) % WORDS_A.length] + " " + WORDS_B[(h >> 5) % WORDS_B.length]; },
+      function () { return a.name.slice(0, Math.ceil(a.name.length * 0.6)) + b.name.slice(Math.floor(b.name.length * 0.4)); }
+    ];
+    var name = styles[h % styles.length]();
+    name = name.replace(/\s+/g, " ").trim();
+    if (name.length > 22) name = name.slice(0, 22);
+    // Title case-ish
+    name = name.split(" ").map(function (w) {
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }).join(" ");
+    return {
+      id: slug(name) + "_" + (h % 9973),
+      name: name,
+      emoji: EMOJIS[h % EMOJIS.length]
+    };
+  }
+
+  async function aiInvent(a, b) {
+    // 1) server AI (automatic for everyone)
+    try {
+      var res = await fetch("/api/combine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          a: { id: a.id, name: a.name, emoji: a.emoji },
+          b: { id: b.id, name: b.name, emoji: b.emoji }
+        })
+      });
+      if (res.ok) {
+        var data = await res.json();
+        if (data && data.result && data.result.name) {
+          serverAI = true;
+          renderList();
+          return {
+            id: data.result.id || slug(data.result.name),
+            name: data.result.name,
+            emoji: data.result.emoji || "✨"
+          };
+        }
+      } else if (res.status === 503) {
+        serverAI = false;
+      }
+    } catch (e) {
+      serverAI = false;
+    }
+    // 2) local fallback
+    return localInvent(a, b);
+  }
+
+  var combining = false;
+  async function combine(c1, c2) {
+    if (combining) return;
+    combining = true;
+    c1.el.classList.add("merging");
+    c2.el.classList.add("merging");
+    status("Crafting...");
+
+    var a = c1.item, b = c2.item;
+    var key = pairKey(a.id, b.id);
+    var result = recipes[key];
+    var isNew = false;
+
+    try {
+      if (!result) {
+        var invented = await aiInvent(a, b);
+        result = { id: invented.id, name: invented.name, emoji: invented.emoji };
+        recipes[key] = result;
+        isNew = true;
+      }
+      if (!unlocked[result.id]) {
+        unlocked[result.id] = { id: result.id, name: result.name, emoji: result.emoji };
+        isNew = true;
+      } else {
+        // prefer stored canonical
+        result = { id: unlocked[result.id].id, name: unlocked[result.id].name, emoji: unlocked[result.id].emoji };
+      }
+      saveState();
+      renderList();
+
+      var midX = (c1.x + c2.x) / 2;
+      var midY = (c1.y + c2.y) / 2;
+      removeChip(c1);
+      removeChip(c2);
+      var item = unlocked[result.id];
+      spawnChip(item, midX, midY, true);
+      status((isNew ? "New: " : "Known: ") + item.emoji + " " + item.name);
+    } finally {
+      combining = false;
+    }
+  }
+
+  list.addEventListener("click", function (e) {
+    var btn = e.target.closest(".item");
+    if (!btn) return;
+    var item = unlocked[btn.getAttribute("data-id")];
+    if (!item) return;
+    var r = board.getBoundingClientRect();
+    var x = 40 + Math.random() * Math.max(40, r.width - 180);
+    var y = 40 + Math.random() * Math.max(40, r.height - 120);
+    spawnChip(item, x, y, true);
+  });
+
+  search.addEventListener("input", renderList);
+  document.getElementById("btnResetBoard").onclick = function () {
+    chips.slice().forEach(removeChip);
+    status("Поле очищено");
+  };
+
+  var modal = document.getElementById("modal");
+  document.getElementById("btnSettings").onclick = function () { modal.classList.add("on"); };
+  document.getElementById("btnCloseModal").onclick = function () { modal.classList.remove("on"); };
+  modal.addEventListener("click", function (e) {
+    if (e.target === modal) modal.classList.remove("on");
+  });
+
+  async function checkServer() {
+    try {
+      var res = await fetch("/api/health");
+      if (!res.ok) throw new Error("bad");
+      var data = await res.json();
+      serverAI = !!data.ai;
+      renderList();
+      if (serverAI) status("ИИ сервер онлайн");
+    } catch (e) {
+      serverAI = false;
+      renderList();
+    }
+  }
+  checkServer();
+
+  function boot() {
+    try {
+      renderList();
+      var start = [
+        [unlocked.water, 60, 80],
+        [unlocked.fire, 220, 80],
+        [unlocked.earth, 60, 180],
+        [unlocked.wind, 220, 180]
+      ];
+      start.forEach(function (s) {
+        if (s[0]) spawnChip(s[0], s[1], s[2], false);
+      });
+    } catch (err) {
+      console.error(err);
+      status("Ошибка загрузки: " + (err && err.message ? err.message : err));
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>
