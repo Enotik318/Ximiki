@@ -154,7 +154,15 @@
   }
   .status.on { opacity: 1; }
 
-  @media (max-width: 860px) {
+ 
+  .chip { transition: box-shadow .18s, border-color .18s; }
+  .chip:hover { border-color:#a5b4fc; box-shadow:0 8px 24px rgba(99,102,241,.14); }
+  .chip.discovered-first { animation: firstGlow 1.1s ease 2; }
+  @keyframes firstGlow { 0%,100% { box-shadow:var(--shadow); } 50% { box-shadow:0 0 0 5px rgba(250,204,21,.45),0 10px 30px rgba(245,158,11,.2); } }
+  .discovery-toast { position:fixed; top:20px; left:50%; transform:translateX(-50%) translateY(-16px); z-index:80; background:#111827;color:#fff;padding:14px 20px;border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.24);opacity:0;pointer-events:none;transition:.3s; font-weight:750; }
+  .discovery-toast.on { opacity:1; transform:translateX(-50%) translateY(0); }
+  .chip { touch-action:none; }
+    @media (max-width: 860px) {
     body { overflow: auto; }
     .app { grid-template-columns: 1fr; height: auto; min-height: 100%; }
     .stage { min-height: 55vh; }
@@ -169,6 +177,9 @@
         <div class="logo">Infinite Alchemy <span>drag · combine · discover</span></div>
         <div class="top-actions">
           <button class="btn" id="btnResetBoard" type="button">Очистить поле</button>
+          <button class="btn" id="btnExport" type="button">Сохранить прогресс</button>
+          <button class="btn" id="btnImport" type="button">Импорт</button>
+          <input id="fileImport" type="file" accept="application/json,.json" hidden />
           <button class="btn" id="btnSettings" type="button">Как играть</button>
         </div>
       </div>
@@ -212,7 +223,14 @@
       </div>
     </div>
   </div>
-  <div class="status" id="status"></div>
+  <div class="modal-bg" id="recipeModal">
+    <div class="modal" id="recipeModalContent">
+      <h2 id="recipeTitle">Рецепт</h2>
+      <p id="recipeBody"></p>
+      <div class="row"><button class="btn pri" id="recipeClose" type="button">Закрыть</button></div>
+    </div>
+  </div>
+  <div class="discovery-toast" id="discoveryToast">✨ Первое открытие!</div>\n  <div class="status" id="status"></div>
 
 <script>
 (function () {
@@ -337,10 +355,73 @@
     } catch (e) { return null; }
   }
   function saveState() {
-    localStorage.setItem(SAVE, JSON.stringify({
-      unlocked: unlocked,
-      recipes: recipes
-    }));
+    localStorage.setItem(SAVE, JSON.stringify({ unlocked: unlocked, recipes: recipes }));
+  }
+  function playTone(freq, duration, type, volume) {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      var ctx = playTone.ctx || (playTone.ctx = new AC());
+      if (ctx.state === "suspended") ctx.resume();
+      var osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = type || "sine"; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(volume || 0.035, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + duration);
+    } catch (_) {}
+  }
+  function clickSound() { playTone(520, .055, "triangle", .025); }
+  function craftSound() { playTone(660, .09, "sine", .04); setTimeout(function(){playTone(880,.13,"triangle",.04);},75); }
+  function rareSound() { playTone(880,.12,"sine",.05); setTimeout(function(){playTone(1175,.18,"sine",.045);},100); setTimeout(function(){playTone(1568,.22,"triangle",.04);},220); }
+  function showFirstDiscovery(item, discovery) {
+    var toast = document.getElementById("discoveryToast");
+    toast.textContent = "✨ Первое открытие! " + item.emoji + " " + item.name + (discovery && discovery.nickname ? " · " + discovery.nickname : "");
+    toast.classList.add("on"); clearTimeout(showFirstDiscovery._t);
+    showFirstDiscovery._t = setTimeout(function(){toast.classList.remove("on");},3500);
+    rareSound();
+  }
+  function showRecipe(item) {
+    var found = null, foundKey = "";
+    Object.keys(recipes).some(function(k) {
+      var r = recipes[k]; if (r && r.id === item.id) { found = r; foundKey = k; return true; }
+      return false;
+    });
+    var title = document.getElementById("recipeTitle"), body = document.getElementById("recipeBody");
+    title.textContent = item.emoji + " " + item.name;
+    if (!found || !found.parents) {
+      body.textContent = item.base ? "Базовый элемент — он доступен с самого начала." : "Рецепт происхождения пока не сохранён. Возможно, элемент был импортирован или создан в старой версии.";
+    } else {
+      body.innerHTML = "Создан из:<br><b>" + found.parents[0].emoji + " " + found.parents[0].name + "</b> + <b>" + found.parents[1].emoji + " " + found.parents[1].name + "</b>";
+    }
+    document.getElementById("recipeModal").classList.add("on");
+  }
+  function attachRecipeGesture(chip) {
+    chip.el.addEventListener("contextmenu", function(e){e.preventDefault();showRecipe(chip.item);});
+    var timer;
+    chip.el.addEventListener("pointerdown",function(e){ if(e.pointerType==="touch") timer=setTimeout(function(){showRecipe(chip.item);},650); });
+    ["pointerup","pointercancel","pointermove"].forEach(function(n){chip.el.addEventListener(n,function(){clearTimeout(timer);});});
+  }
+  function exportSave() {
+    var payload = {version:3, exportedAt:new Date().toISOString(), unlocked:unlocked, recipes:recipes};
+    var blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    var url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url; a.download="infinite-alchemy-save.json"; a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);},1000); status("Сохранение скачано");
+  }
+  function importSaveFile(file) {
+    if (!file) return;
+    var reader=new FileReader();
+    reader.onload=function(){
+      try {
+        var data=JSON.parse(reader.result);
+        if (!data || typeof data!=="object" || !data.unlocked || !data.recipes || typeof data.unlocked!=="object" || typeof data.recipes!=="object") throw new Error("Неверная структура");
+        Object.keys(data.unlocked).forEach(function(id){var it=data.unlocked[id]; if(it&&typeof it.name==="string"&&typeof it.emoji==="string"&&it.id) unlocked[id]=it;});
+        Object.keys(data.recipes).forEach(function(k){var r=data.recipes[k];if(r&&typeof r.name==="string"&&r.id) recipes[k]=r;});
+        saveState();renderList();status("Прогресс импортирован");
+      }catch(e){status("Не удалось импортировать файл");}
+    };
+    reader.onerror=function(){status("Ошибка чтения файла");}; reader.readAsText(file);
   }
 
   var unlocked = {};
@@ -353,7 +434,7 @@
   Object.keys(SEED).forEach(function (k) {
     var parts = k.split("|");
     // normalize already sorted in SEED keys
-    recipes[k] = { name: SEED[k][0], emoji: SEED[k][1], id: slug(SEED[k][0]) };
+    recipes[k] = { name: SEED[k][0], emoji: SEED[k][1], id: slug(SEED[k][0]), parents: parts.map(function(id){return {id:id,name:id.charAt(0).toUpperCase()+id.slice(1),emoji:"✨"};}) };
   });
 
   var st = loadState();
@@ -408,6 +489,7 @@
     var chip = { uid: uid, id: item.id, x: x, y: y, el: node, item: item };
     chips.push(chip);
     bindDrag(chip);
+    attachRecipeGesture(chip);
     syncEmpty();
     return chip;
   }
@@ -502,7 +584,8 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           a: { id: a.id, name: a.name, emoji: a.emoji },
-          b: { id: b.id, name: b.name, emoji: b.emoji }
+          b: { id: b.id, name: b.name, emoji: b.emoji },
+          nickname: localStorage.getItem("infinite.alchemy.nickname") || "Аноним"
         })
       });
       if (res.ok) {
@@ -513,7 +596,9 @@
           return {
             id: data.result.id || slug(data.result.name),
             name: data.result.name,
-            emoji: data.result.emoji || "✨"
+            emoji: data.result.emoji || "✨",
+            isFirst: !!data.isFirst,
+            discovery: data.discovery || data.result.discovery || null
           };
         }
       } else if (res.status === 503) {
@@ -542,9 +627,10 @@
     try {
       if (!result) {
         var invented = await aiInvent(a, b);
-        result = { id: invented.id, name: invented.name, emoji: invented.emoji };
+        result = { id: invented.id, name: invented.name, emoji: invented.emoji, parents: [a,b], isFirst: !!invented.isFirst, discovery: invented.discovery || null };
         recipes[key] = result;
         isNew = true;
+        if (invented.isFirst) showFirstDiscovery(result, invented.discovery);
       }
       if (!unlocked[result.id]) {
         unlocked[result.id] = { id: result.id, name: result.name, emoji: result.emoji };
@@ -553,8 +639,10 @@
         // prefer stored canonical
         result = { id: unlocked[result.id].id, name: unlocked[result.id].name, emoji: unlocked[result.id].emoji };
       }
+      if (!result.parents) result.parents = [a,b];
       saveState();
       renderList();
+      craftSound();
 
       var midX = (c1.x + c2.x) / 2;
       var midY = (c1.y + c2.y) / 2;
@@ -571,6 +659,7 @@
   list.addEventListener("click", function (e) {
     var btn = e.target.closest(".item");
     if (!btn) return;
+    clickSound();
     var item = unlocked[btn.getAttribute("data-id")];
     if (!item) return;
     var r = board.getBoundingClientRect();
@@ -579,11 +668,16 @@
     spawnChip(item, x, y, true);
   });
 
+  list.addEventListener("contextmenu",function(e){var btn=e.target.closest(".item");if(btn){e.preventDefault();var it=unlocked[btn.getAttribute("data-id")];if(it)showRecipe(it);}});
   search.addEventListener("input", renderList);
   document.getElementById("btnResetBoard").onclick = function () {
-    chips.slice().forEach(removeChip);
-    status("Поле очищено");
+    clickSound(); chips.slice().forEach(removeChip); status("Поле очищено");
   };
+  document.getElementById("btnExport").onclick = exportSave;
+  document.getElementById("btnImport").onclick = function(){clickSound();document.getElementById("fileImport").click();};
+  document.getElementById("fileImport").addEventListener("change",function(e){importSaveFile(e.target.files[0]);e.target.value="";});
+  document.getElementById("recipeClose").onclick=function(){document.getElementById("recipeModal").classList.remove("on");};
+  document.getElementById("recipeModal").addEventListener("click",function(e){if(e.target===this)this.classList.remove("on");});
 
   var modal = document.getElementById("modal");
   document.getElementById("btnSettings").onclick = function () { modal.classList.add("on"); };
