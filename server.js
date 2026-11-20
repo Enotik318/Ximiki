@@ -1,11 +1,10 @@
-
 const express = require('express');
 const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 app.use(cors({
   origin: [
@@ -62,7 +61,9 @@ app.post('/api/gemini-test', async (req, res) => {
       ?.map(part => part.text || '')
       .join('');
 
-    res.json({ reply: reply || 'Gemini вернул пустой ответ.' });
+    res.json({
+      reply: reply || 'Gemini вернул пустой ответ.'
+    });
 
   } catch (error) {
     console.error('Server error:', error);
