@@ -1,10 +1,18 @@
+
 const express = require('express');
 const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-4-hydrogen';
+
+// Основная модель и запасные модели
+const MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash'
+];
 
 app.use(cors({
   origin: [
@@ -15,6 +23,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 
+// Проверка сервера
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -23,6 +32,56 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Запрос к Gemini
+async function askGemini(model, prompt) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }]
+          }]
+        }),
+        signal: controller.signal
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      const error = new Error(
+        data?.error?.message || 'Ошибка Gemini API'
+      );
+
+      error.status = response.status;
+      throw error;
+    }
+
+    const reply = data?.candidates?.[0]?.content?.parts
+      ?.map(part => part.text || '')
+      .join('');
+
+    if (!reply) {
+      throw new Error('Модель вернула пустой ответ.');
+    }
+
+    return reply;
+
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// AI endpoint
 app.post('/api/gemini-test', async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(500).json({
@@ -32,45 +91,49 @@ app.post('/api/gemini-test', async (req, res) => {
 
   const prompt = req.body?.prompt || 'Привет! Представься как AI NEXUS.';
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
-        })
-      }
-    );
+  let lastError;
 
-    const data = await response.json();
+  for (const model of MODELS) {
+    try {
+      console.log(`NEXUS: пробуем модель ${model}`);
 
-    if (!response.ok) {
-      console.error('Gemini API error:', data);
-      return res.status(response.status).json({
-        error: data?.error?.message || 'Ошибка Gemini API'
+      const reply = await askGemini(model, prompt);
+
+      console.log(`NEXUS: успешно ответила ${model}`);
+
+      return res.json({
+        reply,
+        model
       });
+
+    } catch (error) {
+      lastError = error;
+
+      console.error(
+        `Модель ${model} не сработала:`,
+        error.status || error.message
+      );
+
+      // Ошибки конфигурации и неправильного запроса
+      // не имеет смысла обходить другими моделями
+      if (
+        error.status === 400 ||
+        error.status === 401 ||
+        error.status === 403
+      ) {
+        return res.status(error.status).json({
+          error: error.message
+        });
+      }
     }
-
-    const reply = data?.candidates?.[0]?.content?.parts
-      ?.map(part => part.text || '')
-      .join('');
-
-    res.json({
-      reply: reply || 'Gemini вернул пустой ответ.'
-    });
-
-  } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({
-      error: 'Ошибка сервера при запросе к Gemini.'
-    });
   }
+
+  console.error('Все модели NEXUS недоступны.');
+
+  return res.status(503).json({
+    error: 'Все модели AI сейчас недоступны. Попробуй ещё раз немного позже.',
+    details: lastError?.message
+  });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
